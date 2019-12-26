@@ -25,6 +25,7 @@ func Handler (evt events.SQSEvent) {
 	uploader := newS3Uploader()
 	bucket := getEnv("BUCKET_NAME")
 
+	c := make(chan bool)
 	var artistIDs []spotify.ID
 	var albumIDs []spotify.ID
 
@@ -48,7 +49,7 @@ func Handler (evt events.SQSEvent) {
 		}
 		log.Printf("Attempting to insert %d artists", len(artists))
 		for _, artist := range artists {
-			go putArtist(uploader, artist, bucket)
+			go putArtist(c, uploader, artist, bucket)
 		}
 	}
 
@@ -59,8 +60,12 @@ func Handler (evt events.SQSEvent) {
 		}
 		log.Printf("Attempting to insert %d albums", len(albums))
 		for _, album := range albums {
-			go putAlbum(uploader, album, bucket)
+			go putAlbum(c, uploader, album, bucket)
 		}
+	}
+
+	for i := 0; i < len(albumIDs) + len(artistIDs); i++ {
+		<-c
 	}
 }
 
@@ -68,44 +73,36 @@ func main () {
 	lambda.Start(Handler)
 }
 
-func putArtist(uploader *s3manager.Uploader, artist *spotify.FullArtist, bucket string) {
+func putArtist(c chan bool, uploader *s3manager.Uploader, artist *spotify.FullArtist, bucket string) {
 	key := fmt.Sprintf("artists/%s.json", artist.ID)
-	artistBytes, err := json.Marshal(artist)
-	if err != nil {
-		log.Printf("Error occurred while marshalling artist with ID: %s\n%v", artist.ID, err)
-	} else {
-		body := bytes.NewBuffer(artistBytes)
-		input := &s3manager.UploadInput{
-			Bucket: aws.String(bucket),
-			ContentType: aws.String("application/json"),
-			Key: aws.String(key),
-			Body: body,
-		}
-		log.Printf("Attempting to insert an artist with ID: %s", artist.ID)
-		_, err := uploader.Upload(input)
-		if err != nil {
-			log.Printf("Failed to upload to S3 for artist with ID: %s\n%v", artist.ID, err)
-		}
-	}
+	putEntity(c, uploader, artist, key, bucket)
 }
 
-func putAlbum(uploader *s3manager.Uploader, album *spotify.FullAlbum, bucket string) {
+func putAlbum(c chan bool, uploader *s3manager.Uploader, album *spotify.FullAlbum, bucket string) {
 	key := fmt.Sprintf("albums/%s.json", album.ID)
-	albumBytes, err := json.Marshal(album)
+	putEntity(c, uploader, album, key, bucket)
+}
+
+func putEntity(c chan bool, uploader *s3manager.Uploader, entity interface{}, key, bucket string) {
+	entityBytes, err := json.Marshal(entity)
 	if err != nil {
-		log.Printf("Error occurred while marshalling album with ID: %s\n%v", album.ID, err)
+		log.Printf("Error occurred while marshalling entity with key: %s\n%v", key, err)
 	} else {
-		body := bytes.NewBuffer(albumBytes)
+		body := bytes.NewBuffer(entityBytes)
 		input := &s3manager.UploadInput{
-			Bucket: aws.String(bucket),
 			ContentType: aws.String("application/json"),
-			Key: aws.String(key),
+			Bucket: &bucket,
+			Key: &key,
 			Body: body,
 		}
-		log.Printf("Attempting to insert an album with ID: %s", album.ID)
-		_, err := uploader.Upload(input)
+		log.Printf("Attempting to insert an entity with key: %s", key)
+		result, err := uploader.Upload(input)
 		if err != nil {
-			log.Printf("Failed to upload to S3 for album with ID: %s\n%v", album.ID, err)
+			log.Printf("Failed to upload to S3 for entity with key: %s\n%v", key, err)
+			c<-false
+		} else {
+			log.Printf("Successfully uploaded entity to S3. %s", result.Location)
+			c<-true
 		}
 	}
 }
