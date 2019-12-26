@@ -25,16 +25,47 @@ func Handler (evt events.SQSEvent) {
 	uploader := newS3Uploader()
 	bucket := getEnv("BUCKET_NAME")
 
+	c := make(chan bool)
+	var artistIDs []spotify.ID
+	var albumIDs []spotify.ID
+
 	for _, msg := range evt.Records {
+		ID := msg.Body
 		msgAttrs := msg.MessageAttributes
 		switch entityType := *(msgAttrs["entity_type"].StringValue); entityType {
 		case "artist":
-			go getAndPutArtist(uploader, client, bucket, msg.Body)
+			artistIDs = append(artistIDs, spotify.ID(ID))
 		case "album":
-			go getAndPutAlbum(uploader, client, bucket, msg.Body)
+			albumIDs = append(artistIDs, spotify.ID(ID))
 		default:
-			log.Fatalf("Unknown entity type received: %s", entityType)
+			log.Printf("Unknown entity type received: %s", entityType)
 		}
+	}
+
+	if artistIDs != nil {
+		artists, err := client.GetArtists(artistIDs...)
+		if err != nil {
+			log.Fatalf("Error occurred while retrieving artists from Spotify\n:%v", err)
+		}
+		log.Printf("Attempting to insert %d artists", len(artists))
+		for _, artist := range artists {
+			go putArtist(c, uploader, artist, bucket)
+		}
+	}
+
+	if albumIDs != nil {
+		albums, err := client.GetAlbums(albumIDs...)
+		if err != nil {
+			log.Fatalf("Error occurred while retrieving albums from Spotify\n:%v", err)
+		}
+		log.Printf("Attempting to insert %d albums", len(albums))
+		for _, album := range albums {
+			go putAlbum(c, uploader, album, bucket)
+		}
+	}
+
+	for i := 0; i < len(albumIDs) + len(artistIDs); i++ {
+		<-c
 	}
 }
 
@@ -42,52 +73,36 @@ func main () {
 	lambda.Start(Handler)
 }
 
-func getAndPutArtist(uploader *s3manager.Uploader, client *spotify.Client, bucket, ID string) {
-	artist, err := client.GetArtist(spotify.ID(ID))
-	if err != nil {
-		log.Printf("Error occurred while retrieving artist with ID: %s\n%v", ID, err)
-	} else {
-		key := fmt.Sprintf("artists/%s.json", ID)
-		artistBytes, err := json.Marshal(artist)
-		if err != nil {
-			log.Printf("Error occurred while marshalling artist with ID: %s\n%v", ID, err)
-		} else {
-			body := bytes.NewBuffer(artistBytes)
-			input := &s3manager.UploadInput{
-				Bucket: aws.String(bucket),
-				ContentType: aws.String("application/json"),
-				Key: aws.String(key),
-				Body: body,
-			}
-			_, err := uploader.Upload(input)
-			if err != nil {
-				log.Printf("Failed to upload to S3 for artist with ID: %s\n%v", ID, err)
-			}
-		}
-	}
+func putArtist(c chan bool, uploader *s3manager.Uploader, artist *spotify.FullArtist, bucket string) {
+	key := fmt.Sprintf("artists/%s.json", artist.ID)
+	putEntity(c, uploader, artist, key, bucket)
 }
 
-func getAndPutAlbum(uploader *s3manager.Uploader, client *spotify.Client, bucket, ID string) {
-	album, err := client.GetAlbum(spotify.ID(ID))
+func putAlbum(c chan bool, uploader *s3manager.Uploader, album *spotify.FullAlbum, bucket string) {
+	key := fmt.Sprintf("albums/%s.json", album.ID)
+	putEntity(c, uploader, album, key, bucket)
+}
+
+func putEntity(c chan bool, uploader *s3manager.Uploader, entity interface{}, key, bucket string) {
+	entityBytes, err := json.Marshal(entity)
 	if err != nil {
-		log.Printf("Error occurred while retrieving album with ID: %s\n%v", ID, err)
+		log.Printf("Error occurred while marshalling entity with key: %s\n%v", key, err)
 	} else {
-		key := fmt.Sprintf("albums/%s.json", ID)
-		albumBytes, err := json.Marshal(album)
+		body := bytes.NewBuffer(entityBytes)
+		input := &s3manager.UploadInput{
+			ContentType: aws.String("application/json"),
+			Bucket: &bucket,
+			Key: &key,
+			Body: body,
+		}
+		log.Printf("Attempting to insert an entity with key: %s", key)
+		result, err := uploader.Upload(input)
 		if err != nil {
-			log.Printf("Error occurred while marshalling album with ID: %s\n%v", ID, err)
+			log.Printf("Failed to upload to S3 for entity with key: %s\n%v", key, err)
+			c<-false
 		} else {
-			body := bytes.NewBuffer(albumBytes)
-			input := &s3manager.UploadInput{
-				Bucket: aws.String(bucket),
-				ContentType: aws.String("application/json"),
-				Key: aws.String(key),
-				Body: body,
-			}
-			_, err := uploader.Upload(input)
-			if err != nil {
-				log.Printf("Failed to upload to S3 for album with ID: %s\n%v", ID, err)
-			}
+			log.Printf("Successfully uploaded entity to S3. %s", result.Location)
+			c<-true
 		}
 	}
 }
