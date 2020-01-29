@@ -36,7 +36,7 @@ func Handler (evt events.SQSEvent) {
 		case "artist":
 			artistIDs = append(artistIDs, spotify.ID(ID))
 		case "album":
-			albumIDs = append(artistIDs, spotify.ID(ID))
+			albumIDs = append(albumIDs, spotify.ID(ID))
 		default:
 			log.Printf("Unknown entity type received: %s", entityType)
 		}
