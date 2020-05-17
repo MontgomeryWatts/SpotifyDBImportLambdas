@@ -14,8 +14,7 @@ import (
 
 func handler(evt events.SQSEvent) {
 	client := sp.NewSpotifyClient()
-	var publisher publisher.Publisher
-	publisher = sns.NewSNSPublisher()
+	var publisher publisher.Publisher = sns.NewSNSPublisher()
 
 	for _, msg := range evt.Records {
 		msgAttrs := msg.MessageAttributes
