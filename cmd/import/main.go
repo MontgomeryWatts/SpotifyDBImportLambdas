@@ -1,29 +1,26 @@
 package main
 
 import (
-	"os"
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"log"
-	"bytes"
-	"context"
-	"encoding/json"
+	"os"
 
+	sp "github.com/MontgomeryWatts/SpotifyDBImportEntityLambda/internal/spotify"
 	"github.com/zmb3/spotify"
-	"golang.org/x/oauth2/clientcredentials"
 
+	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-lambda-go/lambda"
 )
 
-
-
-func Handler (evt events.SQSEvent) {
-	client := newSpotifyClient()
+func handler(evt events.SQSEvent) {
+	client := sp.NewSpotifyClient()
 	uploader := newS3Uploader()
-	bucket := getEnv("BUCKET_NAME")
+	bucket := os.Getenv("BUCKET_NAME")
 
 	c := make(chan bool)
 	var artistIDs []spotify.ID
@@ -64,13 +61,13 @@ func Handler (evt events.SQSEvent) {
 		}
 	}
 
-	for i := 0; i < len(albumIDs) + len(artistIDs); i++ {
+	for i := 0; i < len(albumIDs)+len(artistIDs); i++ {
 		<-c
 	}
 }
 
-func main () {
-	lambda.Start(Handler)
+func main() {
+	lambda.Start(handler)
 }
 
 func putArtist(c chan bool, uploader *s3manager.Uploader, artist *spotify.FullArtist, bucket string) {
@@ -91,45 +88,20 @@ func putEntity(c chan bool, uploader *s3manager.Uploader, entity interface{}, ke
 		body := bytes.NewBuffer(entityBytes)
 		input := &s3manager.UploadInput{
 			ContentType: aws.String("application/json"),
-			Bucket: &bucket,
-			Key: &key,
-			Body: body,
+			Bucket:      &bucket,
+			Key:         &key,
+			Body:        body,
 		}
 		log.Printf("Attempting to insert an entity with key: %s", key)
 		result, err := uploader.Upload(input)
 		if err != nil {
 			log.Printf("Failed to upload to S3 for entity with key: %s\n%v", key, err)
-			c<-false
+			c <- false
 		} else {
 			log.Printf("Successfully uploaded entity to S3. %s", result.Location)
-			c<-true
+			c <- true
 		}
 	}
-}
-
-func getEnv(key string) string {
-	env, ok := os.LookupEnv(key)
-	if !ok {
-		log.Fatalf("%s is not set in environment variables", key)
-	}
-	return env
-}
-
-func newSpotifyClient() *spotify.Client {
-	config := &clientcredentials.Config{
-		ClientID: getEnv("SPOTIFY_ID"),
-		ClientSecret: getEnv("SPOTIFY_SECRET"),
-		TokenURL: spotify.TokenURL,
-	}
-
-	token, err := config.Token(context.Background())
-	if err != nil {
-		log.Fatalf("Couldn't get token: %v", err)
-	}
-
-	client := spotify.Authenticator{}.NewClient(token)
-	client.AutoRetry = true
-	return &client
 }
 
 func newS3Uploader() *s3manager.Uploader {
