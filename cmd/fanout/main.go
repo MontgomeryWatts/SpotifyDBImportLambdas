@@ -17,9 +17,6 @@ func handler(evt events.SQSEvent) {
 	var publisher publisher.Publisher
 	publisher = sns.NewSNSPublisher()
 
-	c := make(chan bool)
-	receives := 0
-
 	for _, msg := range evt.Records {
 		msgAttrs := msg.MessageAttributes
 		ID := msg.Body
@@ -29,15 +26,16 @@ func handler(evt events.SQSEvent) {
 			if err != nil {
 				log.Fatalf("Unable to get albums for artist with ID %s", ID)
 			}
-			receives++
-			go publishAlbumIDsToTopic(c, client, albums, svc, topicArn)
+			for ok := true; ok; ok = (albums.Next != "") {
+				for _, album := range albums.Albums {
+					albumID := album.ID.String()
+					publisher.PublishAlbumID(albumID)
+				}
+				client.NextPage(albums)
+			}
 		default:
 			log.Fatalf("Unknown entity type received: %s", entityType)
 		}
-	}
-
-	for i := 0; i < receives; i++ {
-		<-c
 	}
 }
 
