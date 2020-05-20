@@ -3,9 +3,9 @@ package main
 import (
 	"log"
 
-	sp "github.com/MontgomeryWatts/SpotifyDBImportEntityLambda/internal/spotify"
-	"github.com/MontgomeryWatts/SpotifyDBImportEntityLambda/internal/uploader"
-	"github.com/MontgomeryWatts/SpotifyDBImportEntityLambda/internal/uploader/s3"
+	sp "github.com/MontgomeryWatts/SpotifyDBImportLambdas/internal/spotify"
+	"github.com/MontgomeryWatts/SpotifyDBImportLambdas/internal/uploader"
+	"github.com/MontgomeryWatts/SpotifyDBImportLambdas/internal/uploader/s3"
 	"github.com/zmb3/spotify"
 
 	"github.com/aws/aws-lambda-go/events"

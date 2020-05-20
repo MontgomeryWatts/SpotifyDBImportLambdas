@@ -4,7 +4,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/MontgomeryWatts/SpotifyDBImportEntityLambda/internal/publisher"
+	"github.com/MontgomeryWatts/SpotifyDBImportLambdas/internal/publisher"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
