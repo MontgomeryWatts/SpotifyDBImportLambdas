@@ -4,6 +4,8 @@ import (
 	"log"
 
 	sp "github.com/MontgomeryWatts/SpotifyDBImportLambdas/internal/spotify"
+	"github.com/MontgomeryWatts/SpotifyDBImportLambdas/internal/tracker"
+	"github.com/MontgomeryWatts/SpotifyDBImportLambdas/internal/tracker/dynamodb"
 	"github.com/MontgomeryWatts/SpotifyDBImportLambdas/internal/uploader"
 	"github.com/MontgomeryWatts/SpotifyDBImportLambdas/internal/uploader/s3"
 	"github.com/zmb3/spotify"
@@ -17,6 +19,7 @@ func handler(evt events.SQSEvent) {
 	var artistIDs []spotify.ID
 	var albumIDs []spotify.ID
 	var uploader uploader.Uploader = s3.NewS3Uploader()
+	var tracker tracker.Tracker = dynamodb.NewDynamoDBTracker()
 
 	for _, msg := range evt.Records {
 		ID := msg.Body
@@ -42,7 +45,12 @@ func handler(evt events.SQSEvent) {
 		log.Printf("Attempting to insert %d artists", len(artists))
 		for _, artist := range artists {
 			go func(arg *spotify.FullArtist) {
-				c <- uploader.UploadArtist(arg)
+				err = uploader.UploadArtist(arg)
+				if err != nil {
+					c <- err
+				} else {
+					c <- tracker.UpdateArtist(arg.ID.String())
+				}
 			}(artist)
 		}
 	}
@@ -55,7 +63,12 @@ func handler(evt events.SQSEvent) {
 		log.Printf("Attempting to insert %d albums", len(albums))
 		for _, album := range albums {
 			go func(arg *spotify.FullAlbum) {
-				c <- uploader.UploadAlbum(arg)
+				err = uploader.UploadAlbum(arg)
+				if err != nil {
+					c <- err
+				} else {
+					c <- tracker.UpdateAlbum(arg.ID.String())
+				}
 			}(album)
 		}
 	}
