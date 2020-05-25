@@ -7,7 +7,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/MontgomeryWatts/SpotifyDBImportEntityLambda/internal/uploader"
+	"github.com/MontgomeryWatts/SpotifyDBImportLambdas/internal/uploader"
 	"github.com/zmb3/spotify"
 
 	"github.com/aws/aws-sdk-go/aws"
